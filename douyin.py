@@ -1,13 +1,25 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 import os, sys, requests
 import json, re, hashlib, time
 import configparser
 from retrying import retry
 from contextlib import closing
-from requests_html import HTMLSession
+from requests_html import AsyncHTMLSession, HTMLSession
 from local_file_adapter import LocalFileAdapter
+from pprint import pprint
+import time
+import asyncio
+from telethon.sync import TelegramClient, events
+
+from TikTokApi import TikTokApi
+
+api_id = ***
+api_hash = '***'
+bot_token = '***'
+#api = TikTokApi.get_instance()
+
+#!/usr/bin/env python
+# encoding: utf-8
+
 
 ini_text = '''
 [设置]
@@ -33,7 +45,6 @@ MOBIE_HEADERS = {
 }
 
 class DouYin:
-    
 
     def __init__(self):
         self.headers = {
@@ -66,9 +77,9 @@ class DouYin:
                 input('-用户主页列表为空，请先配置再重试，按任意键继续')
                 exit(0)
             self.shared_list = value.split(',')
-            print('---配置的用户列表为:')
-            for url in self.shared_list:
-                print(url)
+            #print('---配置的用户列表为:')
+            #for url in self.shared_list:
+            #    print(url)
             value = self.config.get('设置', '保存目录')
             if value:
                 self.save_path = value
@@ -76,7 +87,7 @@ class DouYin:
             value = self.config.get('设置', '历史目录')
             if value:
                 self.history_path = value
-            print('---历史目录为:' + self.save_path)
+            print('---历史目录为:' + self.history_path)
             value = self.config.get('设置', '进度块个数')
             if value:
                 self.block_count = int(value)
@@ -106,53 +117,81 @@ class DouYin:
             signature_url = 'file:///' + os.getcwd() + os.sep +'signature.html?user_id=' + str(user_id)
             session.mount("file:///", LocalFileAdapter())
             r = session.get(signature_url)
-            r.html.render()
+            r.html.arender()
             sign = r.html.find('#signature', first=True)
             r.close()
             return sign.text
 
-    def get_video_urls(self, sec_uid, max_cursor,user_id):
-        user_url_prefix = 'https://www.iesdouyin.com/web/api/v2/aweme/post/?sec_uid={0}&max_cursor={1}&count=50&aid=1128&_signature={2}'
-        global FREEZE_SIGNATURE
-        signature = self.get_signature(user_id)
-        i = 0
-        result = []
-        has_more = True
-        while result == [] and has_more:
-            i = i + 1
-            sys.stdout.write('---解析视频链接中 正在第 {} 次尝试...\r'.format(str(i)))
-            sys.stdout.flush()
+        #with AsyncHTMLSession() as session:    
+        #    signature_url = 'file:///' + os.getcwd() + os.sep +'signature.html?user_id=' + str(user_id)
+        #    session.mount("file:///", LocalFileAdapter())
+        #    r = await session.get(signature_url)
+        #    await r.html.arender()
+        #    sign = r.html.find('#signature', first=True)
+        #    r.close()
+        #    return sign.text
 
-            user_url = user_url_prefix.format(sec_uid, max_cursor,signature)
-            response = self.get_request(user_url)
-            html = json.loads(response.content.decode())
-            if  'aweme_list' in html and html['aweme_list'] != []:
-                max_cursor = html['max_cursor']
-                has_more = bool(html['has_more'])
-                result = html['aweme_list']
-            elif  'aweme_list' in html:
-                max_cursor = html['max_cursor']
-                has_more = bool(html['has_more'])
- 
-        nickname = None
-        video_list = []
-        for item in result:
-            if nickname is None:
-                nickname = item['author']['unique_id']+'-['+re.sub(r'[\\/:*?"<>|\r\n]+', '', item['author']['nickname'])+']' if item['author']['unique_id'] else item['author']['short_id']+'-['+re.sub(r'[\\/:*?"<>|\r\n]+', '', item['author']['nickname'])+']'
-                nickname_old = item['author']['nickname'] if re.sub(r'[\/:*?"<>|]', '', item['author']['nickname']) else None
-            if 'video' in item:
-                video_list.append({
-                    'desc': re.sub(r'[\\/:*?"<>|\r\n]+', '', item['desc']) if item['desc'] else '无标题' + item['aweme_id'],
-                    'url': item['video']['play_addr']['url_list'][0],
-                    'aweme_id': item['aweme_id']
-                })
-        return nickname, video_list, max_cursor, has_more
+    def get_video_urls(self, sec_uid, max_cursor,user_id,flg):
+        if flg==0:
+            user_url_prefix = 'https://www.iesdouyin.com/web/api/v2/aweme/post/?sec_uid={0}&max_cursor={1}&count=50&aid=1128&_signature={2}'
+            global FREEZE_SIGNATURE
+            signature = self.get_signature(user_id)
+            i = 0
+            result = []
+            has_more = True
+            while result == [] and has_more:
+                i = i + 1
+                sys.stdout.write('---解析视频链接中 正在第 {} 次尝试...\r'.format(str(i)))
+                sys.stdout.flush()
+
+                user_url = user_url_prefix.format(sec_uid, max_cursor,signature)
+                response = self.get_request(user_url)
+                html = json.loads(response.content.decode())
+                if  'aweme_list' in html and html['aweme_list'] != []:
+                    max_cursor = html['max_cursor']
+                    has_more = bool(html['has_more'])
+                    result = html['aweme_list']
+                elif  'aweme_list' in html:
+                    max_cursor = html['max_cursor']
+                    has_more = bool(html['has_more'])
+    
+            nickname = None
+            video_list = []
+            for item in result:
+                if nickname is None:
+                    nickname = item['author']['unique_id']+'-['+re.sub(r'[\\/:*?"<>|\r\n]+', '', item['author']['nickname'])+']' if item['author']['unique_id'] else item['author']['short_id']+'-['+re.sub(r'[\\/:*?"<>|\r\n]+', '', item['author']['nickname'])+']'
+                    #nickname_old = item['author']['nickname'] if re.sub(r'[\/:*?"<>|]', '', item['author']['nickname']) else None
+                if 'video' in item and item['aweme_type'] == 4:
+                    video_list.append({
+                        'desc': re.sub(r'[\\/:*?"<>|\r\n]+', '', item['desc']) if item['desc'] else '无标题' + item['aweme_id'],
+                        'url': item['video']['play_addr']['url_list'][0],
+                        'aweme_id': item['aweme_id']
+                    })
+            return nickname, video_list, max_cursor, has_more
+        elif flg==1:
+            result=api.user_posts(user_id, sec_uid, count=30, cursor=0)
+            nickname = None
+            video_list = []
+            for item in result:
+                if nickname is None:
+                    nickname = item['author']['uniqueId']+'-['+re.sub(r'[\\/:*?"<>|\r\n]+', '', item['author']['nickname'])+']' if item['author']['uniqueId'] else item['author']['id']+'-['+re.sub(r'[\\/:*?"<>|\r\n]+', '', item['author']['nickname'])+']'
+                    #nickname_old = item['author']['nickname'] if re.sub(r'[\/:*?"<>|]', '', item['author']['nickname']) else None
+                if 'video' in item :
+                    video_list.append({
+                        'desc': re.sub(r'[\\/:*?"<>|\r\n]+', '', item['desc']) if item['desc'] else '无标题' + item['id'],
+                        'url': item['video']['play_addr'],
+                        'aweme_id': item['id']
+                    })
+            return nickname, video_list, max_cursor, False
+
+        
  
 
     #下载视频
     def video_downloader(self, video_url, video_name):
         size = 0
         video_url = video_url.replace('aweme.snssdk.com', 'api.amemv.com')
+        requests.adapters.DEFAULT_RETRIES = 5
         with closing(requests.get(video_url, headers=self.headers, stream=True)) as response:
             chunk_size = 1024
             content_size = int(response.headers['content-length'])
@@ -191,10 +230,17 @@ class DouYin:
         return response
 
     def get_user_info(self, url):
-        rsp = self.get_request(url)
-        sec_uid = re.search(r'sec_uid=.*?\&', rsp.url).group(0)
-        user_id = re.findall(r'/share/user/(\d+)', rsp.url)[0]
-        return sec_uid[8:-1],user_id
+        if "v.douyin.com"  in url or "www.iesdouyin.com" in url:
+            rsp = self.get_request(url)
+            sec_uid = re.search(r'sec_uid=.*?\&', rsp.url).group(0)
+            user_id = re.findall(r'/share/user/(\d+)', rsp.url)[0]
+            return sec_uid[8:-1],user_id,0
+        elif "tiktok.com"  in url:
+            rsp = self.get_request(url)
+            sec_uid = re.search(r'sec_uid=.*?\&', rsp.url).group(0)
+            #user_id = re.findall(r'/share/user/(\d+)', rsp.url)[0]
+            user_id = re.search(r'&user_id=.*?\&', rsp.url).group(0)
+            return sec_uid[8:-1],user_id[9:-1],1
 
     def get_history(self,user_id):
         history = []
@@ -202,11 +248,14 @@ class DouYin:
         if not os.path.exists(history_dir):
             os.makedirs(history_dir)
 
+ #       if os.path.exists(history_dir):
+ #           os.remove(history_dir+'/history.txt')
         with open(history_dir+'/history.txt', 'a+') as f:
             f.seek(0)
             lines = f.readlines()
             for line in lines:
                 history.append(line.strip())
+            
 
         return history
 
@@ -229,16 +278,35 @@ class DouYin:
         #    input('取消下载, 按任意键退出')
         #    exit(0)
 
-        for url in self.shared_list:
+        ##def handle(msg):
+        ##    pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')    # 匹配模式
+        ##    url=re.findall(pattern,msg['text'])[0]
+        ##    print('正在解析下载 ' + url)
+        ##    self.get_video_by_url(url)
+        ##MessageLoop(bot, handle).run_as_thread()
+        ##while 1:
+        ##    time.sleep(10)
+        
+        #
+        client = TelegramClient('boiio', api_id, api_hash).start(bot_token=bot_token)
+        @client.on(events.NewMessage)
+        async def my_event_handler(event):
+            pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')    # 匹配模式
+            url=re.findall(pattern,event.message.message)[0]
             print('正在解析下载 ' + url)
             self.get_video_by_url(url)
+        client.run_until_disconnected()
+
+        #for url in self.shared_list:
+        #    print('正在解析下载 ' + url)
+        #    self.get_video_by_url(url)
 
     def get_video_by_url(self, url):
         max_cursor = 0
         has_more = True
         total_count = 0
-
-        sec_uid , user_id = self.get_user_info(url)
+        #flg 0是抖音，1是Tiktok
+        sec_uid , user_id ,flg= self.get_user_info(url)
         if not sec_uid:
             print('获取sec_uid失败')
             return
@@ -251,7 +319,7 @@ class DouYin:
         i = 0
 
         while has_more:
-            nickname, video_list, max_cursor, has_more = self.get_video_urls(sec_uid, max_cursor,user_id)
+            nickname, video_list, max_cursor, has_more =self.get_video_urls(sec_uid, max_cursor,user_id,flg)
 
             i=i+1
 
@@ -279,6 +347,7 @@ class DouYin:
                     aweme_id = video_list[num]['aweme_id']
                     if aweme_id in self.history:
                         print('---{0} -- 已下载...'.format(history_name))
+                        has_more = False
                     else:
                         self.video_downloader(video_list[num]['url'], video_path)
                         self.history.append(aweme_id)
